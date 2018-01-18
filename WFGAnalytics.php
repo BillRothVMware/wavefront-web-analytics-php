@@ -39,11 +39,14 @@ if(array_key_exists('s',$options) || array_key_exists('e',$options)) {
 		exit(1);
 	}
 }
+if(array_key_exists('m',$options)) {
+	$gmetric = $options['m'];
+}
 
 if(array_key_exists('t',$options)) {
 	 $metrictimeframe = $options['t'];
 } else {
-	$estr="Need a metric name";
+	$estr="Need a metric name timeframe";
 		if($logging) 
 			syslog(LOG_INFO,$estr);
 		echo $estr . "\n";
@@ -97,6 +100,8 @@ function getReport($analytics) {
   $VIEW_ID = "89623538";
 
   // Create the DateRange object.
+  // Documentation on DateRanges is at: https://developers.google.com/analytics/devguides/reporting/core/v4/rest/v4/reports/batchGet#ReportRequest.FIELDS.date_ranges
+  //
   $dateRange = new Google_Service_AnalyticsReporting_DateRange();
   $dateRange->setStartDate($startdate);
   $dateRange->setEndDate($enddate);
@@ -110,6 +115,9 @@ function getReport($analytics) {
   $sessions->setAlias($mt . "." . $metrictimeframe);
 
   // Create the ReportRequest object.
+  // metric names https://developers.google.com/analytics/devguides/reporting/core/dimsmets#cats=user
+  //
+  
   $request = new Google_Service_AnalyticsReporting_ReportRequest();
   $request->setViewId($VIEW_ID);
   $request->setDateRanges($dateRange);
@@ -182,7 +190,6 @@ function sendWavefront($metric, $value, $ts, $tags, $source) {
 	}
 	$str = $metric . " " . $value . " " . $ts . " " . $tags . " source=" . $source . "\n";
 	
-	echo "final send " . $str;
 	if($logging)
 		syslog(LOG_INFO,$str);
 	
