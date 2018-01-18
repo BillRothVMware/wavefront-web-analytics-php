@@ -3,14 +3,60 @@
 // Load the Google API PHP Client Library.
 require_once __DIR__ . '/vendor/autoload.php';
 
+// process options
+$options = getopt("s::e::m::lt:");
+// s: start date
+// e: end date
+// m: metric name from google. i.e. ga:sessions
+// t: timeframe for metric name
+// l: log to syslog
+
+// Globals defaults
+
+$logging = false;
+$startdate = "yesterday";
+$enddate = "yesterday";
+$gmetric="ga:sessions";
+$metrictimeframe="yesterday";
+$tags="lang=php";
+$sourcetag="php";
+$gmetricheader = "marketing.analytics.web.";
+
+if (array_key_exists('l', $options)) {
+	$logging = true;
+	openlog("Wavefront PHP Analytics", LOG_PID | LOG_PERROR, LOG_LOCAL0);
+}
+
+if(array_key_exists('s',$options) || array_key_exists('e',$options)) {
+	if(array_key_exists('s',$options) && array_key_exists('e',$options)){
+		$startdate=$options['s'];
+		$enddate=$options['e'];
+	} else {
+		$estr="Need both Start and End Date";
+		if($logging) 
+			syslog(LOG_INFO,$estr);
+		echo $estr . "\n";
+		exit(1);
+	}
+}
+
+if(array_key_exists('t',$options)) {
+	 $metrictimeframe = $options['t'];
+} else {
+	$estr="Need a metric name";
+		if($logging) 
+			syslog(LOG_INFO,$estr);
+		echo $estr . "\n";
+		exit(1);
+}
+/// MAIN CODE
+
 	
 $analytics = initializeAnalytics();
 $response = getReport($analytics);
-$metricheader = "marketing.analytics.web.";
 
-printResults($metricheader,$response);
 
-sendWavefront("marketing.analytics.web.sessions",12218.0,time(),"lang=php", "php");
+printResults($gmetricheader,$response);
 
 
 /**
@@ -45,18 +91,23 @@ function initializeAnalytics()
  */
 function getReport($analytics) {
 
+  global $startdate, $enddate, $gmetric, $metrictimeframe;
+  
   // Replace with your view ID, for example 89623538.
   $VIEW_ID = "89623538";
 
   // Create the DateRange object.
   $dateRange = new Google_Service_AnalyticsReporting_DateRange();
-  $dateRange->setStartDate("yesterday");
-  $dateRange->setEndDate("today");
+  $dateRange->setStartDate($startdate);
+  $dateRange->setEndDate($enddate);
 
   // Create the Metrics object.
   $sessions = new Google_Service_AnalyticsReporting_Metric();
-  $sessions->setExpression("ga:sessions");
-  $sessions->setAlias("sessions.yesterday");
+  $sessions->setExpression($gmetric);
+  // set up alias for metric name, strip :ga:"
+  $mt = substr($gmetric,3);
+  
+  $sessions->setAlias($mt . "." . $metrictimeframe);
 
   // Create the ReportRequest object.
   $request = new Google_Service_AnalyticsReporting_ReportRequest();
@@ -75,7 +126,9 @@ function getReport($analytics) {
  *
  * @param An Analytics Reporting API V4 response.
  */
-function printResults($metricsheader, $reports) {
+function printResults($pmetricheader, $reports) {
+	global $metrictimeframe, $logging, $tags, $sourcetag;
+	
   for ( $reportIndex = 0; $reportIndex < count( $reports ); $reportIndex++ ) {
     $report = $reports[ $reportIndex ];
     $header = $report->getColumnHeader();
@@ -95,7 +148,10 @@ function printResults($metricsheader, $reports) {
         $values = $metrics[$j]->getValues();
         for ($k = 0; $k < count($values); $k++) {
           $entry = $metricHeaders[$k];
-          print($metricsheader . $entry->getName() . ": " . $values[$k] . "\n");
+		  $estr=$pmetricheader . $entry->getName();	
+		  
+		  sendWavefront($estr, $values[$k],time(), $tags, $sourcetag);
+		  
         }
       }
     }
@@ -103,6 +159,8 @@ function printResults($metricsheader, $reports) {
 }
 
 function sendWavefront($metric, $value, $ts, $tags, $source) {
+	
+	global $logging;
 	
 	$address = "10.140.44.31";
     $service_port = 2878;
@@ -113,18 +171,21 @@ function sendWavefront($metric, $value, $ts, $tags, $source) {
 		echo "socket_create() failed: reason: " . socket_strerror(socket_last_error()) . "\n";
 		return;
 	} else {
-		echo "create OK.\n";
+		//
 	}
 	$result = socket_connect($socket, $address, $service_port);
 	if ($result === false) {
 		echo "socket_connect() failed.\nReason: ($result) " . socket_strerror(socket_last_error($socket)) . "\n";
 		return;
 	} else {
-		echo "connect OK.\n";
+		//
 	}
 	$str = $metric . " " . $value . " " . $ts . " " . $tags . " source=" . $source . "\n";
 	
-	echo $str;
+	echo "final send " . $str;
+	if($logging)
+		syslog(LOG_INFO,$str);
+	
 	socket_write($socket, $str, strlen($str));
 	socket_close($socket);
 	
