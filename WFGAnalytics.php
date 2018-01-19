@@ -4,12 +4,14 @@
 require_once __DIR__ . '/vendor/autoload.php';
 
 // process options
-$options = getopt("s::e::m::lt:");
+$options = getopt("s::e::m::lt:7::z::");
 // s: start date
 // e: end date
 // m: metric name from google. i.e. ga:sessions
 // t: timeframe for metric name
 // l: log to syslog
+// 7: previous 7days
+
 
 // Globals defaults
 
@@ -21,6 +23,11 @@ $metrictimeframe="yesterday";
 $tags="lang=php";
 $sourcetag="php";
 $gmetricheader = "marketing.analytics.web.";
+$gsend = true;
+
+if (array_key_exists('z', $options)) {
+	$gsend = false;
+}
 
 if (array_key_exists('l', $options)) {
 	$logging = true;
@@ -39,19 +46,21 @@ if(array_key_exists('s',$options) || array_key_exists('e',$options)) {
 		exit(1);
 	}
 }
+
+if(array_key_exists('7',$options)) {
+	$startdate = substr(date(DATE_ATOM,strtotime('-8 days')),0,10);
+	$enddate = substr(date(DATE_ATOM,strtotime('-1 days')),0,10);
+	$metrictimeframe = "last7days";
+}
+
 if(array_key_exists('m',$options)) {
 	$gmetric = $options['m'];
 }
 
 if(array_key_exists('t',$options)) {
 	 $metrictimeframe = $options['t'];
-} else {
-	$estr="Need a metric name timeframe";
-		if($logging) 
-			syslog(LOG_INFO,$estr);
-		echo $estr . "\n";
-		exit(1);
-}
+} 
+
 /// MAIN CODE
 
 	
@@ -168,7 +177,7 @@ function printResults($pmetricheader, $reports) {
 
 function sendWavefront($metric, $value, $ts, $tags, $source) {
 	
-	global $logging;
+	global $logging, $gsend;
 	
 	$address = "10.140.44.31";
     $service_port = 2878;
@@ -192,8 +201,8 @@ function sendWavefront($metric, $value, $ts, $tags, $source) {
 	
 	if($logging)
 		syslog(LOG_INFO,$str);
-	
-	socket_write($socket, $str, strlen($str));
+	if($gsend)
+		socket_write($socket, $str, strlen($str));
 	socket_close($socket);
 	
 }
